@@ -487,7 +487,7 @@ mod.default(pi);
 await tool.execute("initial-arm", {}, undefined, undefined, {});
 // Poll for the successor arm instead of spending a fixed wall-clock budget:
 // the predecessor sleeps 0.5s before it closes, and on a loaded machine a
-// fixed window can expire before the successor's own startup completes.
+// fixed window can expire before the successor arm finishes its own startup.
 const readRows = () =>
   existsSync(process.env.FM_ARM_LOG)
     ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
@@ -4172,7 +4172,7 @@ writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await plugin.emit({ type: "session.idle", location: { directory: "/fm-test/another-location" }, data: { sessionID: "session-foreign" } });
 await new Promise((resolve) => setTimeout(resolve, 500));
 if (existsSync(process.env.FM_ARM_LOG)) {
-  console.error("another location's idle armed this location's watcher");
+  console.error("an idle from another location armed the watcher of this location");
   process.exit(1);
 }
 await plugin.emit({ type: "session.idle", data: { sessionID: "session-test" } });
