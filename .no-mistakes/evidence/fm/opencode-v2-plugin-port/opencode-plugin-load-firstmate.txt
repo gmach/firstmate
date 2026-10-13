@@ -1,0 +1,5 @@
+fm-primary-cd-check {"type":"local","path":"/Users/gavin.mach/.no-mistakes/worktrees/d7a6e2db43ff/01M4TQVDAH624TRNEWAS7Y53CA/.opencode/plugins/fm-primary-cd-check.js"} {"status":"active"}
+fm-primary-pretool-check {"type":"local","path":"/Users/gavin.mach/.no-mistakes/worktrees/d7a6e2db43ff/01M4TQVDAH624TRNEWAS7Y53CA/.opencode/plugins/fm-primary-pretool-check.js"} {"status":"active"}
+fm-primary-sessionstart-nudge {"type":"local","path":"/Users/gavin.mach/.no-mistakes/worktrees/d7a6e2db43ff/01M4TQVDAH624TRNEWAS7Y53CA/.opencode/plugins/fm-primary-sessionstart-nudge.js"} {"status":"active"}
+fm-primary-turnend-guard {"type":"local","path":"/Users/gavin.mach/.no-mistakes/worktrees/d7a6e2db43ff/01M4TQVDAH624TRNEWAS7Y53CA/.opencode/plugins/fm-primary-turnend-guard.js"} {"status":"active"}
+fm-primary-watch-arm {"type":"local","path":"/Users/gavin.mach/.no-mistakes/worktrees/d7a6e2db43ff/01M4TQVDAH624TRNEWAS7Y53CA/.opencode/plugins/fm-primary-watch-arm.js"} {"status":"active"}

@@ -1,0 +1,5 @@
+undefined {"status":"failed","error":"Plugin must export a default definition with an id and an effect or setup function.","ref":"err_36b42dea"}
+undefined {"status":"failed","error":"Plugin must export a default definition with an id and an effect or setup function.","ref":"err_433d149c"}
+undefined {"status":"failed","error":"Plugin must export a default definition with an id and an effect or setup function.","ref":"err_e3152c97"}
+undefined {"status":"failed","error":"Plugin failed to load","ref":"err_eb6e9c7a"}
+undefined {"status":"failed","error":"Plugin failed to load","ref":"err_3a1f8be0"}
