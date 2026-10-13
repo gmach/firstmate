@@ -266,12 +266,7 @@ function observeArmOutput(hostMode, stdout, stderr, settleReadiness) {
 
 async function sendPrompt(paths, client, sessionID, text) {
   const encoded = await encodeFirstmateOperationalInput(paths.root, "watcher", text);
-  await client.session.promptAsync({
-    path: { id: sessionID },
-    body: {
-      parts: [{ type: "text", text: encoded }],
-    },
-  });
+  await client.session.prompt({ sessionID, text: encoded });
 }
 
 function confirmHandlingDelivery(paths, recovery) {
@@ -561,19 +556,32 @@ async function ensureArm(paths, sessionID, client, predecessorArmPid = "", inclu
   return armAttempt(await waitForArmReady(armChild), armChild, includeArmChild);
 }
 
-export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {
-  const root = worktree ? resolvePath(worktree) : await resolveRoot(directory);
-  const paths = effectivePaths(root);
-  globalThis[COORDINATOR_KEY] = {
-    ensureArmed: (sessionID, activeClient) => ensureArm(paths, sessionID, activeClient ?? client),
-  };
+// OpenCode 2 loads a local plugin only from a default export carrying an `id`
+// plus `setup(ctx)`; `setup` subscribes to the server event stream with
+// ctx.event.subscribe() and returns the cleanup that aborts it. V2 event
+// payloads carry their fields under `data`, so an idle session's id is
+// event.data.sessionID, and wake prompts ride ctx.session.prompt (verified
+// 2026-10-13 against OpenCode 2.0.28). The context is also the server client,
+// so the `client`-named parameter threaded below still holds the prompt API.
+export default {
+  id: "fm-primary-watch-arm",
+  async setup(ctx) {
+    const root = await resolveRoot(ctx.location.directory);
+    const paths = effectivePaths(root);
+    globalThis[COORDINATOR_KEY] = {
+      ensureArmed: (sessionID) => ensureArm(paths, sessionID, ctx),
+    };
 
-  return {
-    event: async ({ event }) => {
-      if (event.type !== "session.idle") return;
-      const sessionID = event.properties?.sessionID;
-      if (!sessionID) return;
-      void ensureArm(paths, sessionID, client);
-    },
-  };
+    const controller = new AbortController();
+    void (async () => {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        if (event.type !== "session.idle") continue;
+        const sessionID = event.data?.sessionID;
+        if (!sessionID) continue;
+        void ensureArm(paths, sessionID, ctx);
+      }
+    })();
+
+    return () => controller.abort();
+  },
 };

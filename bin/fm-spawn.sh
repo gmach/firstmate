@@ -4841,6 +4841,9 @@ EOF
 // sessions' status until the latched session settles, so a child's idle can
 // never clear the worker's busy state. The session.idle touch stays the
 // watcher's wake NOTIFICATION, never current-state truth.
+// OpenCode 2 loads a local plugin only from a default export carrying an id
+// plus a setup function, and delivers server events under a data field
+// through ctx.event.subscribe (verified 2026-10-13 against OpenCode 2.0.28).
 import { execFile } from "node:child_process";
 const notifyTurnEnd = $busy_notify_turnend;
 const busyEvent = (state, event) =>
@@ -4850,37 +4853,42 @@ const busyEvent = (state, event) =>
       "--gen", "$BUSY_GEN", "--source", "opencode-plugin", "--event", event,
     ], () => resolve());
   });
-export const FmBusyState = async () => {
-  let activeSession = null;
-  return {
-    event: async ({ event }) => {
-      if (event.type === "session.status") {
-        const sessionID = event.properties.sessionID;
-        const statusType = event.properties.status && event.properties.status.type;
-        if (statusType === "busy" || statusType === "retry") {
-          if (activeSession === null) activeSession = sessionID;
-          if (sessionID === activeSession) await busyEvent("busy", "session-" + statusType);
-          return;
+export default {
+  id: "fm-busy-state",
+  async setup(ctx) {
+    let activeSession = null;
+    const controller = new AbortController();
+    void (async () => {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        if (event.type === "session.status") {
+          const sessionID = event.data.sessionID;
+          const statusType = event.data.status && event.data.status.type;
+          if (statusType === "busy" || statusType === "retry") {
+            if (activeSession === null) activeSession = sessionID;
+            if (sessionID === activeSession) await busyEvent("busy", "session-" + statusType);
+            continue;
+          }
+          if (statusType === "idle" && sessionID === activeSession) {
+            activeSession = null;
+            await busyEvent("idle", "session-status-idle");
+          }
+          continue;
         }
-        if (statusType === "idle" && sessionID === activeSession) {
-          activeSession = null;
-          await busyEvent("idle", "session-status-idle");
+        if (event.type === "session.idle") {
+          if (event.data.sessionID === activeSession) {
+            activeSession = null;
+            await busyEvent("idle", "session-idle");
+          }
+          if (notifyTurnEnd) {
+            await new Promise((resolve) => {
+              execFile("touch", ["$TURNEND"], () => resolve());
+            });
+          }
         }
-        return;
       }
-      if (event.type === "session.idle") {
-        if (event.properties.sessionID === activeSession) {
-          activeSession = null;
-          await busyEvent("idle", "session-idle");
-        }
-        if (notifyTurnEnd) {
-          await new Promise((resolve) => {
-            execFile("touch", ["$TURNEND"], () => resolve());
-          });
-        }
-      }
-    },
-  };
+    })();
+    return () => controller.abort();
+  },
 };
 EOF
     exclude_path '.opencode/plugins/fm-busy-state.js'
