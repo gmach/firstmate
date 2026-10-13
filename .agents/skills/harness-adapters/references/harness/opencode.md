@@ -1,6 +1,6 @@
 # OpenCode
 
-Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue behavior re-verified on 2026-07-20 using 1.18.4 and the OpenCode 2 plugin contract re-verified on 2026-10-13 using 2.0.28.
+Verified on 2026-06-11 across versions 1.15.7 through 1.17.6, with busy-queue behavior re-verified on 2026-07-20 using 1.18.4 and OpenCode 2 plugin load re-verified on 2026-10-13 using 2.0.28.
 
 ## Operating facts
 
@@ -35,7 +35,7 @@ The live Herdr guard is `FM_HERDR_SUBMIT_CONFIRM_LIVE=1 ../../../tests/fm-herdr-
 
 The plugins use OpenCode 2's plugin API: each default-exports a definition carrying an `id` and `setup(ctx)`, subscribes to server events through `ctx.event.subscribe()`, delivers prompts through `ctx.session.prompt`, and registers tool interception through `ctx.tool.hook("execute.before", ...)`.
 OpenCode 2 carries each event's fields under `data`, so a session id is `event.data.sessionID`.
-That contract was verified on 2026-10-13 against OpenCode 2.0.28: all five primary plugins load and report `active`, and the ported suites drive them through a plain Node host (`tests/opencode-plugin-host.mjs`).
+Only plugin load was verified live against OpenCode 2.0.28; event delivery and prompt delivery are covered by the Node host suites, and [the supervision verification record](../../../../../docs/verification/supervision.md#opencode-2-plugin-contract-2026-10-13) owns that evidence.
 The primary integration was verified on 2026-07-08 with OpenCode 1.17.6 and the plugin entrypoint was re-verified on 2.0.28.
 `.opencode/plugins/fm-primary-turnend-guard.js` subscribes to `session.idle`.
 Throwing from `session.idle` does not block `opencode run`, so the primary adapter treats the event as passive and uses `ctx.session.prompt` to force one follow-up turn when `../../../bin/fm-turnend-guard.sh` returns 2.

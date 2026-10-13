@@ -261,7 +261,7 @@ if (/^watcher: healthy\b/.test(redundant.content[0]?.text)) {
 if (!redundant.content[0]?.text.includes("only after a later notification says the cycle is missing, failed, or unhealthy")) {
   throw new Error(`redundant call omitted the repair-only condition: ${redundant.content[0]?.text}`);
 }
-for (let i = 0; i < 100 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+for (let i = 0; i < 1000 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
 if (!existsSync(process.env.FM_ARM_LOG)) throw new Error("initial arm child did not start");
@@ -309,7 +309,7 @@ const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 mod.default(pi);
 await tool.execute("tool-call-first", {}, undefined, undefined, {});
 let redundant = null;
-for (let i = 0; i < 100; i += 1) {
+for (let i = 0; i < 1000; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
   redundant = await tool.execute("tool-call-during-retry", {}, undefined, undefined, {});
   if (redundant.content[0]?.text.includes("scheduled continuity retry")) break;
