@@ -4,7 +4,10 @@
 // plus `setup(ctx)`, and reaches the plugin through `ctx` domains rather than
 // the V1 returned-hooks object. This host builds a minimal context, runs the
 // plugin's own setup(), and lets a driver push server events through
-// ctx.event.subscribe() and inspect the hooks it registered.
+// ctx.event.subscribe() and inspect the hooks it registered. OpenCode 2 runs
+// one server for every location, so an event may carry another location; an
+// event without one resolves through ctx.session.get, which answers with the
+// plugin's own location unless a driver overrides it.
 //
 // Usage from a driver:
 //   const plugin = await startPlugin(process.env.PLUGIN, {
@@ -12,6 +15,7 @@
 //     session: { prompt: async (input) => { prompts.push(input.text); } },
 //   });
 //   await plugin.emit({ type: "session.idle", data: { sessionID: "s" } });
+//   await plugin.emit({ type: "session.idle", location: { directory: "/other" }, data: { sessionID: "s" } });
 import { pathToFileURL } from "node:url";
 
 export async function startPlugin(pluginPath, options = {}) {
@@ -33,7 +37,11 @@ export async function startPlugin(pluginPath, options = {}) {
 
   const ctx = {
     location: { directory: options.directory },
-    session: { prompt: async () => {}, ...(options.session ?? {}) },
+    session: {
+      prompt: async () => {},
+      get: async () => ({ location: { directory: options.directory } }),
+      ...(options.session ?? {}),
+    },
     tool: {
       hook: async (name, callback) => {
         (toolHooks[name] ??= []).push(callback);

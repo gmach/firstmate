@@ -1029,6 +1029,15 @@ const plugin = await startPlugin(process.env.PLUGIN, {
   directory: process.env.LOCATION,
   session: { prompt: async (input) => { promptBody = input.text; } },
 });
+// The OpenCode 2 server is shared, so another location's idle reaches this
+// plugin too and must not draw a follow-up, and another root's watch-arm
+// coordinator must not answer for this location.
+globalThis.__firstmateOpenCodeWatchArm = { "/fm-test/another-location": { ensureArmed: async () => "armed" } };
+await plugin.emit({ type: "session.idle", location: { directory: "/fm-test/another-location" }, data: { sessionID: "session-foreign" } });
+if (promptBody !== "") {
+  console.error(`another location's idle drew a follow-up: ${promptBody}`);
+  process.exit(1);
+}
 await plugin.emit({ type: "session.idle", data: { sessionID: "session-test" } });
 if (!promptBody.startsWith("\u2063FIRSTMATE_OP: v1 turn-end-guard: ")) {
   console.error(`untyped operational prompt: ${promptBody}`);

@@ -536,6 +536,36 @@ function armAttempt(status, armChild, includeArmChild) {
   return includeArmChild ? { status, armChild } : status;
 }
 
+async function eventDirectory(ctx, event) {
+  const directory = event.location?.directory ?? event.data?.location?.directory;
+  if (directory) return directory;
+  try {
+    const session = await ctx.session.get({ sessionID: event.data?.sessionID });
+    return session?.location?.directory ?? "";
+  } catch {
+    return "";
+  }
+}
+
+async function handleEvents(ctx, signal, handle) {
+  for (;;) {
+    try {
+      for await (const event of ctx.event.subscribe({ signal })) {
+        try {
+          await handle(event);
+        } catch (error) {
+          console.error(`fm-primary-watch-arm: event handling failed: ${error?.stack ?? error}`);
+        }
+      }
+      return;
+    } catch (error) {
+      if (signal.aborted) return;
+      console.error(`fm-primary-watch-arm: event stream failed, re-subscribing: ${error?.stack ?? error}`);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 1000));
+    }
+  }
+}
+
 async function ensureArm(paths, sessionID, client, predecessorArmPid = "", includeArmChild = false) {
   let launchResult = null;
   if (!launchInFlight) {
@@ -560,27 +590,30 @@ async function ensureArm(paths, sessionID, client, predecessorArmPid = "", inclu
 // plus `setup(ctx)`; `setup` subscribes to the server event stream with
 // ctx.event.subscribe() and returns the cleanup that aborts it. V2 event
 // payloads carry their fields under `data`, so an idle session's id is
-// event.data.sessionID, and wake prompts ride ctx.session.prompt (verified
-// 2026-10-13 against OpenCode 2.0.28). The context is also the server client,
-// so the `client`-named parameter threaded below still holds the prompt API.
+// event.data.sessionID, and wake prompts ride ctx.session.prompt. Only plugin
+// load was verified live against OpenCode 2.0.28 (2026-10-13); event delivery
+// and the prompt call are covered by tests/opencode-plugin-host.mjs. The
+// context is also the server client, so the `client`-named parameter threaded
+// below still holds the prompt API. The server is shared across locations, so
+// an idle from another location is ignored and the coordinator the turn-end
+// guard consults is keyed by this location's root.
 export default {
   id: "fm-primary-watch-arm",
   async setup(ctx) {
     const root = await resolveRoot(ctx.location.directory);
     const paths = effectivePaths(root);
-    globalThis[COORDINATOR_KEY] = {
+    (globalThis[COORDINATOR_KEY] ??= {})[root] = {
       ensureArmed: (sessionID) => ensureArm(paths, sessionID, ctx),
     };
 
     const controller = new AbortController();
-    void (async () => {
-      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        if (event.type !== "session.idle") continue;
-        const sessionID = event.data?.sessionID;
-        if (!sessionID) continue;
-        void ensureArm(paths, sessionID, ctx);
-      }
-    })();
+    void handleEvents(ctx, controller.signal, async (event) => {
+      if (event.type !== "session.idle") return;
+      const sessionID = event.data?.sessionID;
+      if (!sessionID) return;
+      if ((await resolveRoot(await eventDirectory(ctx, event))) !== root) return;
+      void ensureArm(paths, sessionID, ctx);
+    });
 
     return () => controller.abort();
   },

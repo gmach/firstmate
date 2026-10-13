@@ -9,10 +9,10 @@ import { spawn } from "node:child_process";
 // guards against (see that script's header and docs/arm-pretool-check.md).
 // OpenCode 2 loads a local plugin only from a default export carrying an `id`
 // plus `setup(ctx)`; `setup` registers the hook through
-// ctx.tool.hook("execute.before", ...), and throwing from it blocks the tool
-// (verified 2026-10-13 against OpenCode 2.0.28: the throw prevents the bash
-// command from running and surfaces the thrown message as the failed tool
-// result).
+// ctx.tool.hook("execute.before", ...), and throwing from it blocks the tool.
+// Only plugin load was verified live against OpenCode 2.0.28 (2026-10-13); the
+// hook's input shape and throw-to-block are covered by
+// tests/opencode-plugin-host.mjs.
 
 function runProcess(command, args) {
   return new Promise((resolvePromise) => {

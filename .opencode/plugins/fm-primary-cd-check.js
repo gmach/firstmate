@@ -8,10 +8,11 @@ import { spawn } from "node:child_process";
 // This mirrors fm-primary-pretool-check.js, calling the cd-guard owner instead
 // of the watcher-arm one. OpenCode 2 loads a local plugin only from a default
 // export carrying an `id` plus `setup(ctx)`; `setup` registers the hook through
-// ctx.tool.hook("execute.before", ...), and throwing from it blocks the tool
-// (verified 2026-10-13 against OpenCode 2.0.28). The owner script is itself
-// inert outside the real primary checkout, so a crewmate/scout worktree is
-// never affected.
+// ctx.tool.hook("execute.before", ...), and throwing from it blocks the tool.
+// Only plugin load was verified live against OpenCode 2.0.28 (2026-10-13); the
+// hook's input shape is covered by tests/opencode-plugin-host.mjs. The owner
+// script is itself inert outside the real primary checkout, so a crewmate/scout
+// worktree is never affected.
 
 function runProcess(command, args) {
   return new Promise((resolvePromise) => {

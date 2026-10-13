@@ -4169,6 +4169,12 @@ const { startPlugin } = await import(pathToFileURL(process.env.HOST).href);
 const client = { session: { prompt: async () => {} } };
 const plugin = await startPlugin(process.env.PLUGIN, { directory: process.env.WORKTREE, session: client.session });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await plugin.emit({ type: "session.idle", location: { directory: "/fm-test/another-location" }, data: { sessionID: "session-foreign" } });
+await new Promise((resolve) => setTimeout(resolve, 500));
+if (existsSync(process.env.FM_ARM_LOG)) {
+  console.error("another location's idle armed this location's watcher");
+  process.exit(1);
+}
 await plugin.emit({ type: "session.idle", data: { sessionID: "session-test" } });
 for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -4254,7 +4260,7 @@ printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" HOST="$ROOT/tests/opencode-plugin-host.mjs" node 2>&1 <<'EOF'
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const { startPlugin } = await import(pathToFileURL(process.env.HOST).href);
@@ -4268,7 +4274,7 @@ await plugin.emit(event);
 // coordinator rather than waiting a fixed span: refusing an unowned lock walks
 // git and ps probes that can outlast any such span, and the owned-lock event
 // below would then be answered from the refusal instead of arming.
-const refusal = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test");
+const refusal = await globalThis.__firstmateOpenCodeWatchArm[realpathSync(process.env.WORKTREE)].ensureArmed("session-test");
 if (refusal !== "read-only") {
   console.error(`expected a read-only refusal without the session lock, got ${refusal}`);
   process.exit(1);
@@ -4312,14 +4318,14 @@ printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" HOST="$ROOT/tests/opencode-plugin-host.mjs" node 2>&1 <<'EOF'
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const { startPlugin } = await import(pathToFileURL(process.env.HOST).href);
 const client = { session: { prompt: async () => {} } };
 await startPlugin(process.env.PLUGIN, { directory: process.env.WORKTREE, session: client.session });
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
-const status = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test");
+const status = await globalThis.__firstmateOpenCodeWatchArm[realpathSync(process.env.WORKTREE)].ensureArmed("session-test");
 await new Promise((resolve) => setTimeout(resolve, 120));
 if (status !== "not-primary") {
   console.error(`expected not-primary, got ${status}`);

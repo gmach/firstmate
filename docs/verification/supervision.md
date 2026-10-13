@@ -272,11 +272,13 @@ The blocking and bounded-follow-up mechanisms were validated across seven harnes
 ### OpenCode 2 plugin contract, 2026-10-13
 
 OpenCode 2.0.28 replaced the V1 plugin API, so a V1 implementation (`export const Name = async (...) => ({ hooks })`) no longer loads: the loader reports `Plugin must export a default definition with an id and an effect or setup function`.
-All five tracked primary plugins and the `fm-spawn`-generated busy-state plugin were ported to the V2 shape and re-verified on 2026-10-13 against the installed OpenCode 2.0.28.
+All five tracked primary plugins and the `fm-spawn`-generated busy-state plugin were ported to the V2 shape on 2026-10-13.
+Only plugin load was verified live against the installed OpenCode 2.0.28; event delivery, the event payload shape, and prompt delivery are covered only by the Node host suites below, not by a live TUI run.
 
 - `opencode api get '/api/plugin?location[directory]=<dir>'` reports all five primary plugins as `active` in a checkout carrying the ported files, while the same query against a V1-shaped checkout reports five `failed` entries with the loader error above.
 - `tests/opencode-plugin-host.mjs` drives each plugin's `setup(ctx)` with a minimal context, and the ported `tests/fm-pi-watch-extension.test.sh`, `tests/fm-turnend-guard.test.sh`, `tests/fm-watch-arm.test.sh`, `tests/fm-sessionstart-nudge.test.sh`, and `tests/fm-busy-adapter-wiring.test.sh` cover the same behaviors the V1 hosts did.
-- V2 carries each event's fields under `data` (`event.data.sessionID`) and delivers prompts through `ctx.session.prompt`; the live TUI regression `tests/fm-opencode-primary-live-e2e.test.sh` still passes the removed V1 `--pure` flag and needs a V2 refresh before it can run again.
+- The suites assume V2 carries each event's fields under `data` (`event.data.sessionID`) and delivers prompts through `ctx.session.prompt`, matching the 2.0.28 event schema; the live TUI regression `tests/fm-opencode-primary-live-e2e.test.sh` still passes the removed V1 `--pure` flag and needs a V2 refresh before it can run again.
+- One OpenCode 2 server serves every location, so each plugin ignores an event whose location (the event's `location.directory`, or its session's `location.directory` through `ctx.session.get`) resolves to another root, and the watch-arm coordinator the turn-end guard consults is keyed by root; the host suites emit another location's events and assert nothing happens.
 
 ### Cursor primary park, 2026-08-13
 

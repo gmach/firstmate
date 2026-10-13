@@ -193,8 +193,8 @@ OpenCode 1.17.15
 Pi 0.80.5
 ```
 
-The OpenCode row was re-verified on 2026-10-13 against OpenCode 2.0.28.
-That release replaced the V1 plugin API, so the same throw-to-block behavior is reached through `ctx.tool.hook("execute.before", ...)` reading `event.input.command` instead of a returned `tool.execute.before` hook reading `output.args.command`.
+OpenCode 2.0.28 replaced the V1 plugin API, so the same throw-to-block behavior is reached through `ctx.tool.hook("execute.before", ...)` reading `event.input.command` instead of a returned `tool.execute.before` hook reading `output.args.command`.
+On 2026-10-13 only plugin load was verified live against 2.0.28; the ported hook is exercised through `tests/opencode-plugin-host.mjs`, not a live tool call.
 
 Every harness was instructed to issue these exact shell command strings as separate tool calls:
 

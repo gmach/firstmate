@@ -4843,8 +4843,12 @@ EOF
 // watcher's wake NOTIFICATION, never current-state truth.
 // OpenCode 2 loads a local plugin only from a default export carrying an id
 // plus a setup function, and delivers server events under a data field
-// through ctx.event.subscribe (verified 2026-10-13 against OpenCode 2.0.28).
+// through ctx.event.subscribe. Only plugin load was verified live against
+// OpenCode 2.0.28 (2026-10-13); event handling is covered by
+// tests/opencode-plugin-host.mjs. The server is shared across locations, so an
+// event from another location is ignored before it can latch or touch state.
 import { execFile } from "node:child_process";
+import { realpathSync } from "node:fs";
 const notifyTurnEnd = $busy_notify_turnend;
 const busyEvent = (state, event) =>
   new Promise((resolve) => {
@@ -4853,40 +4857,74 @@ const busyEvent = (state, event) =>
       "--gen", "$BUSY_GEN", "--source", "opencode-plugin", "--event", event,
     ], () => resolve());
   });
+const resolvePath = (directory) => {
+  try {
+    return realpathSync(directory);
+  } catch {
+    return directory;
+  }
+};
+const eventDirectory = async (ctx, event) => {
+  const directory = event.location?.directory ?? event.data?.location?.directory;
+  if (directory) return directory;
+  try {
+    const session = await ctx.session.get({ sessionID: event.data?.sessionID });
+    return session?.location?.directory ?? "";
+  } catch {
+    return "";
+  }
+};
+const handleEvents = async (ctx, signal, handle) => {
+  for (;;) {
+    try {
+      for await (const event of ctx.event.subscribe({ signal })) {
+        try {
+          await handle(event);
+        } catch (error) {
+          console.error("fm-busy-state: event handling failed: " + (error?.stack ?? error));
+        }
+      }
+      return;
+    } catch (error) {
+      if (signal.aborted) return;
+      console.error("fm-busy-state: event stream failed, re-subscribing: " + (error?.stack ?? error));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+};
 export default {
   id: "fm-busy-state",
   async setup(ctx) {
+    const location = resolvePath(ctx.location.directory);
     let activeSession = null;
     const controller = new AbortController();
-    void (async () => {
-      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        if (event.type === "session.status") {
-          const sessionID = event.data.sessionID;
-          const statusType = event.data.status && event.data.status.type;
-          if (statusType === "busy" || statusType === "retry") {
-            if (activeSession === null) activeSession = sessionID;
-            if (sessionID === activeSession) await busyEvent("busy", "session-" + statusType);
-            continue;
-          }
-          if (statusType === "idle" && sessionID === activeSession) {
-            activeSession = null;
-            await busyEvent("idle", "session-status-idle");
-          }
-          continue;
+    void handleEvents(ctx, controller.signal, async (event) => {
+      if (event.type !== "session.status" && event.type !== "session.idle") return;
+      if (resolvePath(await eventDirectory(ctx, event)) !== location) return;
+      if (event.type === "session.status") {
+        const sessionID = event.data.sessionID;
+        const statusType = event.data.status && event.data.status.type;
+        if (statusType === "busy" || statusType === "retry") {
+          if (activeSession === null) activeSession = sessionID;
+          if (sessionID === activeSession) await busyEvent("busy", "session-" + statusType);
+          return;
         }
-        if (event.type === "session.idle") {
-          if (event.data.sessionID === activeSession) {
-            activeSession = null;
-            await busyEvent("idle", "session-idle");
-          }
-          if (notifyTurnEnd) {
-            await new Promise((resolve) => {
-              execFile("touch", ["$TURNEND"], () => resolve());
-            });
-          }
+        if (statusType === "idle" && sessionID === activeSession) {
+          activeSession = null;
+          await busyEvent("idle", "session-status-idle");
         }
+        return;
       }
-    })();
+      if (event.data.sessionID === activeSession) {
+        activeSession = null;
+        await busyEvent("idle", "session-idle");
+      }
+      if (notifyTurnEnd) {
+        await new Promise((resolve) => {
+          execFile("touch", ["$TURNEND"], () => resolve());
+        });
+      }
+    });
     return () => controller.abort();
   },
 };

@@ -182,6 +182,11 @@ const plugin = await startPlugin(process.env.PLUGIN, {
   directory: process.env.WORKTREE,
   session: { prompt: async (input) => { prompts.push(input.text); } },
 });
+await plugin.emit({
+  type: "session.created",
+  data: { sessionID: "session-nudge-foreign", location: { directory: "/fm-test/another-location" } },
+});
+if (prompts.length !== 0) throw new Error(`another location's session was nudged: ${prompts[0]}`);
 const event = { type: "session.created", data: { sessionID: "session-nudge-test" } };
 await plugin.emit(event);
 await plugin.emit(event);
@@ -191,7 +196,7 @@ EOF
   ) || status=$?
   expect_code 0 "$status" "OpenCode exact nudge delivery"
   [ -z "$out" ] || fail "OpenCode exact nudge delivery printed output: $out"
-  pass "OpenCode session.created delivers the exact wrapper nudge once per session"
+  pass "OpenCode session.created delivers the exact wrapper nudge once per session, only in its own location"
 }
 
 # --- run tier ----------------------------------------------------------------

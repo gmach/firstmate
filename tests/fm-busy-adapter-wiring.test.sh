@@ -157,14 +157,15 @@ test_pi_extension_stale_incarnation_rejected() {
 
 # drive_oc_plugin <plugin-path> <events-json-lines...>: load the generated
 # OpenCode plugin in a plain Node host and feed it one event per argument, in
-# order, through the same ctx.event.subscribe() stream OpenCode 2 calls.
+# order, through the same ctx.event.subscribe() stream OpenCode 2 calls. The
+# plugin's location is the worktree it was written into.
 drive_oc_plugin() {
   local plugin=$1
   shift
-  PLUGIN_PATH="$plugin" HOST="$ROOT/tests/opencode-plugin-host.mjs" node --input-type=module - "$@" 2>&1 <<'EOF'
+  PLUGIN_PATH="$plugin" LOCATION="${plugin%/.opencode/plugins/fm-busy-state.js}" HOST="$ROOT/tests/opencode-plugin-host.mjs" node --input-type=module - "$@" 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 const { startPlugin } = await import(pathToFileURL(process.env.HOST).href);
-const plugin = await startPlugin(process.env.PLUGIN_PATH, {});
+const plugin = await startPlugin(process.env.PLUGIN_PATH, { directory: process.env.LOCATION });
 for (const arg of process.argv.slice(2)) {
   await plugin.emit(JSON.parse(arg));
 }
@@ -177,6 +178,10 @@ oc_status() {  # <sessionID> <type>
 
 oc_idle() {  # <sessionID>
   printf '{"type":"session.idle","data":{"sessionID":"%s"}}' "$1"
+}
+
+oc_foreign() {  # <event-json>: the same event from another location on the shared server
+  jq -c '. + {location: {directory: "/fm-test/another-location"}}' <<<"$1"
 }
 
 test_opencode_plugin_semantic_lifecycle() {
@@ -224,7 +229,18 @@ test_opencode_plugin_semantic_lifecycle() {
   [ -f "$state/$id.turn-ended" ] || fail "the marker touch must stay a notification for every session.idle"
   out=$(classify opencode "$id" "$state")
   [ "$out" = "busy opencode-plugin" ] || fail "another session's idle must not clear the latched busy, got '$out'"
-  pass "opencode plugin classifies from session.status, scoped to the latched worker session"
+
+  out=$(drive_oc_plugin "$plugin" "$(oc_status ses_main idle)") || fail "reset drive failed: $out"
+  rm -f "$state/$id.turn-ended"
+  out=$(drive_oc_plugin "$plugin" \
+    "$(oc_foreign "$(oc_status ses_foreign busy)")" \
+    "$(oc_status ses_main busy)" \
+    "$(oc_foreign "$(oc_status ses_main idle)")" \
+    "$(oc_foreign "$(oc_idle ses_main)")") || fail "foreign-location drive failed: $out"
+  [ ! -e "$state/$id.turn-ended" ] || fail "another location's session.idle touched this worker's notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy opencode-plugin" ] || fail "another location's events must neither latch nor clear the worker, got '$out'"
+  pass "opencode plugin classifies from session.status, scoped to the latched worker session in its own location"
 }
 
 run_claude_hook() {  # <settings.json> <hook-event>

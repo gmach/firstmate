@@ -10,8 +10,10 @@ import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 // plus `setup(ctx)`; `setup` subscribes to the server event stream with
 // ctx.event.subscribe() and returns the cleanup that aborts it. V2 event
 // payloads carry their fields under `data`, so an idle session's id is
-// event.data.sessionID, and the follow-up rides ctx.session.prompt (verified
-// 2026-10-13 against OpenCode 2.0.28).
+// event.data.sessionID, and the follow-up rides ctx.session.prompt. Only plugin
+// load was verified live against OpenCode 2.0.28 (2026-10-13); event delivery
+// and the prompt call are covered by tests/opencode-plugin-host.mjs. The server
+// is shared across locations, so an event from another location is ignored.
 
 const COORDINATOR_KEY = "__firstmateOpenCodeWatchArm";
 
@@ -50,13 +52,43 @@ function resolvePath(anchor) {
   }
 }
 
+async function eventDirectory(ctx, event) {
+  const directory = event.location?.directory ?? event.data?.location?.directory;
+  if (directory) return directory;
+  try {
+    const session = await ctx.session.get({ sessionID: event.data?.sessionID });
+    return session?.location?.directory ?? "";
+  } catch {
+    return "";
+  }
+}
+
+async function handleEvents(ctx, signal, handle) {
+  for (;;) {
+    try {
+      for await (const event of ctx.event.subscribe({ signal })) {
+        try {
+          await handle(event);
+        } catch (error) {
+          console.error(`fm-primary-turnend-guard: event handling failed: ${error?.stack ?? error}`);
+        }
+      }
+      return;
+    } catch (error) {
+      if (signal.aborted) return;
+      console.error(`fm-primary-turnend-guard: event stream failed, re-subscribing: ${error?.stack ?? error}`);
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 1000));
+    }
+  }
+}
+
 function runGuard(root) {
   if (!root) return Promise.resolve({ code: 0, stderr: "" });
   return runProcess(`${root}/bin/fm-turnend-guard.sh`, [], '{"stop_hook_active":false}');
 }
 
-async function letWatchArmRun(sessionID) {
-  const coordinator = globalThis[COORDINATOR_KEY];
+async function letWatchArmRun(root, sessionID) {
+  const coordinator = globalThis[COORDINATOR_KEY]?.[root];
   if (!coordinator?.ensureArmed) return false;
   const status = await coordinator.ensureArmed(sessionID);
   return status === "armed" || status === "wake" || status === "failed";
@@ -71,37 +103,36 @@ export default {
     const skipNextIdle = new Set();
     const controller = new AbortController();
 
-    void (async () => {
-      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        if (event.type !== "session.idle") continue;
-        const sessionID = event.data?.sessionID;
-        if (!sessionID) continue;
+    void handleEvents(ctx, controller.signal, async (event) => {
+      if (event.type !== "session.idle") return;
+      const sessionID = event.data?.sessionID;
+      if (!sessionID) return;
+      if ((await resolveRoot(await eventDirectory(ctx, event))) !== root) return;
 
-        if (skipNextIdle.has(sessionID)) {
-          skipNextIdle.delete(sessionID);
-          continue;
-        }
-
-        if (await letWatchArmRun(sessionID)) continue;
-
-        const result = await runGuard(root);
-        if (result.code !== 2) continue;
-
-        try {
-          const text = await encodeFirstmateOperationalInput(
-            root,
-            "turn-end-guard",
-            "TURN WOULD END BLIND - supervision is off. " +
-              "The watcher cycle is missing, failed, or unhealthy. Follow the harness recovery instruction below before ending the turn.\n\n" +
-              result.stderr,
-          );
-          await ctx.session.prompt({ sessionID, text });
-          skipNextIdle.add(sessionID);
-        } catch {
-          skipNextIdle.delete(sessionID);
-        }
+      if (skipNextIdle.has(sessionID)) {
+        skipNextIdle.delete(sessionID);
+        return;
       }
-    })();
+
+      if (await letWatchArmRun(root, sessionID)) return;
+
+      const result = await runGuard(root);
+      if (result.code !== 2) return;
+
+      try {
+        const text = await encodeFirstmateOperationalInput(
+          root,
+          "turn-end-guard",
+          "TURN WOULD END BLIND - supervision is off. " +
+            "The watcher cycle is missing, failed, or unhealthy. Follow the harness recovery instruction below before ending the turn.\n\n" +
+            result.stderr,
+        );
+        await ctx.session.prompt({ sessionID, text });
+        skipNextIdle.add(sessionID);
+      } catch {
+        skipNextIdle.delete(sessionID);
+      }
+    });
 
     return () => controller.abort();
   },
